@@ -21,10 +21,16 @@ var/
 *.egg
 
 # Virtual Environment
-.env
 .venv
 venv/
 ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+credentials_backup_*.txt
+init-db.sql
 
 # IDE
 .idea/

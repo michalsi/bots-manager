@@ -1,34 +1,35 @@
-[project]
+[tool.poetry]
 name = "bots-manager"
 version = "0.1.0"
 description = "Trading Bot Management System"
-authors = [
-    {name = "Your Name",email = "you@example.com"}
-]
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.9"
-dependencies = [
-    "fastapi (>=0.115.11,<0.116.0)",
-    "uvicorn (>=0.34.0,<0.35.0)",
-    "sqlalchemy (>=2.0.38,<3.0.0)",
-    "psycopg2-binary (>=2.9.10,<3.0.0)",
-    "python-jose (>=3.4.0,<4.0.0)",
-    "passlib (>=1.7.4,<2.0.0)",
-    "python-dotenv (>=1.0.1,<2.0.0)",
-    "streamlit (>=1.43.1,<2.0.0)",
-    "httpx (>=0.28.1,<0.29.0)",
-    "pydantic (>=2.10.6,<3.0.0)",
-    "alembic (>=1.15.1,<2.0.0)"
+packages = [
+    { include = "backend", from = "src" },
+    { include = "frontend", from = "src" }
 ]
-
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.10,<4.0"
+python = ">=3.9,!=3.9.7,<4.0"
+python-dotenv = ">=1.0.1,<2.0.0"
+httpx = ">=0.28.1,<0.29.0"
+
+
+[tool.poetry.group.backend.dependencies]
+fastapi = ">=0.115.11,<0.116.0"
+uvicorn = ">=0.34.0,<0.35.0"
+sqlalchemy = ">=2.0.38,<3.0.0"
+psycopg2-binary = ">=2.9.10,<3.0.0"
+python-jose = ">=3.4.0,<4.0.0"
+passlib = ">=1.7.4,<2.0.0"
+pydantic = ">=2.10.6,<3.0.0"
+pydantic-settings = "^2.8.1"
+alembic = ">=1.15.1,<2.0.0"
+
+[tool.poetry.group.frontend.dependencies]
+streamlit = ">=1.43.1,<2.0.0"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
 black = "^25.1.0"
@@ -36,3 +37,6 @@ isort = "^6.0.1"
 mypy = "^1.15.0"
 pytest-cov = "^6.0.0"
 
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
