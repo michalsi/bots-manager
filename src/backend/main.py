@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .deps import get_db
@@ -23,5 +24,7 @@ async def list_bots(db: Session = Depends(get_db)):
     Endpoint to list all bots.
     Uses FastAPI's dependency injection to get the database session.
     """
-    bots = db.query(Bot).all()
+    stmt = select(Bot)
+    result = db.execute(stmt)
+    bots = result.scalars().all()
     return bots
