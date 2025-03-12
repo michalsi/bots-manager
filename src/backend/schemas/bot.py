@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
 
 class BotBase(BaseModel):
     """
@@ -28,7 +29,6 @@ class Bot(BotBase):
     """
     id: int
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: Optional[datetime] = None
 
-    class Config:
-        orm_mode = True  # Enables ORM mode for Pydantic
+    model_config = ConfigDict(from_attributes=True)

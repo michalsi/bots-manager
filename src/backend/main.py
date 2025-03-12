@@ -1,13 +1,9 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 
-from .database import engine, get_db
-from .models import Base  # Updated import
-from .models.bot import Bot  # Import the Bot model
-from .schemas.bot import Bot as BotSchema  # Import the Bot schema
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
+from .deps import get_db
+from .models.bot import Bot
+from .schemas.bot import Bot as BotSchema
 
 # Initialize FastAPI application
 app = FastAPI(

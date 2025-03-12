@@ -1,5 +1,5 @@
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
-
 
 class Settings(BaseSettings):
     """
@@ -10,9 +10,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     DATABASE_URL: str
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
-
-settings = Settings()
+    model_config = ConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )

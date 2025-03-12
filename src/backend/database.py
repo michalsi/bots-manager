@@ -1,26 +1,22 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from .config import settings
 
-# Create SQLAlchemy engine
-engine = create_engine(settings.DATABASE_URL)
+class Base(DeclarativeBase):
+    """Base class for all database models"""
+    pass
 
-# SessionLocal is used to create database sessions
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for database models
-Base = declarative_base()
+# Initialize variables
+engine = None
+SessionLocal = None
 
-# Dependency to get database session
-def get_db():
-    """
-    Dependency function that creates a new SQLAlchemy SessionLocal
-    that will be used in a single request, and then closed after the request is completed.
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+def init_db(database_url: str) -> None:
+    """Initialize database connection"""
+    global engine
+    global SessionLocal
+    if engine is None:
+        engine = create_engine(database_url)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        Base.metadata.create_all(bind=engine)
