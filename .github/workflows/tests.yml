@@ -21,7 +21,7 @@ jobs:
       - name: Install Docker Compose
         run: |
           sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
+          sudo apt-get install -y docker-compose
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
