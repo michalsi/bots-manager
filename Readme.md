@@ -32,6 +32,11 @@ poetry run start-frontend
    make clean
    ```
 
+Run tests:
+
+   ```bash
+   ./scripts/run_tests.sh
+   ```
 ## Environment Files
 
 - `.env` - Contains environment-specific configuration
