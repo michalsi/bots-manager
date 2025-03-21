@@ -1,5 +1,7 @@
+name: ${COMPOSE_PROJECT_NAME:-trading_bot}
 services:
   postgres:
+    container_name: ${PROJECT_NAME:-trading_bot}_postgres
     image: postgres:13
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -11,6 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   backend:
+    container_name: ${PROJECT_NAME:-trading_bot}_backend
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -26,6 +29,7 @@ services:
       - postgres
 
   frontend:
+    container_name: ${PROJECT_NAME:-trading_bot}_frontend
     build:
       context: .
       dockerfile: Dockerfile.frontend

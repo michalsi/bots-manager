@@ -1,40 +1,49 @@
 import hashlib
 import hmac
+import logging
 import time
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Depends, HTTPException
 from pybit.unified_trading import HTTP
-from sqlalchemy import select
+from sqlalchemy import text, engine
 from sqlalchemy.orm import Session
 
 from .config import Settings
+from .database import init_db
 from .deps import get_db, get_settings
-from .models.bot import Bot
-from .schemas.bot import Bot as BotSchema
+from .logger import setup_basic_logging, logger
+from .routers import bot
 
-# Initialize FastAPI application
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    """Handle startup and shutdown"""
+    settings = get_settings()
+    init_db(settings.DATABASE_URL)  # Ensure this line is present
+    setup_basic_logging(settings.DEBUG)
+    logging.info("Application starting up")
+    yield
+    if engine is not None:
+        engine.dispose()  # Close database connections
+    logging.info("Application shutting down")
+
+
 app = FastAPI(
     title="Trading Bot Manager",
     description="API for managing and monitoring trading bots",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
+
+app.include_router(bot.router)
+
 
 @app.get("/")
 async def root():
     """Root endpoint for API health check"""
     return {"status": "online"}
-
-@app.get("/bots/", response_model=list[BotSchema])
-async def list_bots(db: Session = Depends(get_db)):
-    """
-    Endpoint to list all bots.
-    Uses FastAPI's dependency injection to get the database session.
-    """
-    stmt = select(Bot)
-    result = db.execute(stmt)
-    bots = result.scalars().all()
-    return bots
 
 
 @app.get("/debug-env/")
@@ -46,6 +55,25 @@ async def debug_env():
         "cwd": os.getcwd(),
         "env_file_exists": os.path.exists('.env')
     }
+
+
+@app.get("/health")
+async def health_check(db: Session = Depends(get_db)):
+    """Health check endpoint"""
+    try:
+        # Test database connection
+        result = db.execute(text("SELECT 1")).scalar()
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "test_query_result": result
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }
 
 
 @app.get("/wallet_balance/")
@@ -65,73 +93,6 @@ async def get_wallet_balance(coin: str, settings: Settings = Depends(get_setting
             raise HTTPException(status_code=400, detail="Failed to fetch wallet balance")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-async def get_bybit_server_time() -> float:
-    """Get Bybit server time."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get("https://api.bybit.com/v5/market/time")
-        data = response.json()
-        return float(data["result"]["timeSecond"]) * 1000  # Convert to milliseconds
-
-
-@app.get("/trading-bots/")
-async def list_trading_bots(
-        settings: Settings = Depends(get_settings),
-        page: int = 0,
-        limit: int = 150,
-        status: int = 0
-):
-    """Endpoint to list all trading bots from Bybit using session authentication."""
-
-    endpoint = "https://api2.bybit.com/s1/bot/tradingbot/v1/list-all-bots"
-
-    params = {
-        "status": status,
-        "page": page,
-        "limit": limit
-    }
-
-    headers = {
-        "accept": "*/*",
-        "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-        "content-type": "application/json",
-        "origin": "https://www.bybit.com",
-        "referer": "https://www.bybit.com/",
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-    }
-
-    cookies = {
-        "secure-token": settings.BYBIT_SECURE_TOKEN,
-        "deviceId": settings.BYBIT_DEVICE_ID,
-    }
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                endpoint,
-                headers=headers,
-                cookies=cookies,
-                json=params,
-                timeout=30.0
-            )
-
-            print(f"Response Status: {response.status_code}")
-            print(f"Response Body: {response.text}")
-
-            response.raise_for_status()
-            return response.json()
-
-        except httpx.HTTPStatusError as e:
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Failed to fetch trading bots: {e.response.text}"
-            )
-        except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Request failed: {str(e)}"
-            )
 
 
 @app.get("/test-auth/")
@@ -163,3 +124,47 @@ async def test_auth(settings: Settings = Depends(get_settings)):
         response = await client.get(endpoint, headers=headers, params=params)
         print(f"Test Auth Response: {response.text}")  # Debug print
         return response.json()
+
+
+@app.get("/debug/database")
+async def debug_database(db: Session = Depends(get_db)):
+    """Debug endpoint for database information"""
+    from .database import _engine, _session_maker
+    from sqlalchemy import text
+    try:
+        # Test database connection and get version
+        version = db.execute(text("SELECT version()")).scalar()
+        # Get connection pool statistics if available
+        pool_info = {}
+        if _engine is not None and hasattr(_engine, 'pool'):
+            pool = _engine.pool
+            pool_info = {
+                "size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow()
+            }
+        return {
+            "status": "connected",
+            "database_url": get_settings().DATABASE_URL,
+            "engine_initialized": _engine is not None,
+            "session_maker_initialized": _session_maker is not None,
+            "postgres_version": version,
+            "pool_info": pool_info,
+            "current_schema": db.execute(text("SELECT current_schema()")).scalar(),
+            "connection_info": {
+                "database": db.execute(text("SELECT current_database()")).scalar(),
+                "user": db.execute(text("SELECT current_user")).scalar(),
+                "pid": db.execute(text("SELECT pg_backend_pid()")).scalar()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Database debug check failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "database_url": get_settings().DATABASE_URL,
+            "engine_initialized": _engine is not None,
+            "session_maker_initialized": _session_maker is not None
+        }

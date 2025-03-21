@@ -1,24 +1,25 @@
 #!/bin/bash
 
-# Define project name (usually the directory name of your docker-compose.yml)
-PROJECT_NAME=$(basename "$(pwd)")
+#PROJECT_NAME=${1:-$(basename "$(pwd)")}
+PROJECT_NAME=trading_bot_dev
+echo "Cleaning up Docker resources for project: $PROJECT_NAME"
 
-echo "Stopping and removing all containers for project: $PROJECT_NAME"
-docker-compose down --volumes --rmi all
+echo "Stopping and removing containers for project: $PROJECT_NAME"
+docker-compose -p "$PROJECT_NAME" down --volumes --rmi all
 
-echo "Removing unused Docker volumes"
-docker volume prune -f
+echo "Removing project volumes..."
+docker volume ls -q | grep "^${PROJECT_NAME}" | while read -r volume; do
+    docker volume rm "$volume"
+done
 
-echo "Removing unused Docker networks"
-docker network prune -f
+echo "Removing project networks..."
+docker network ls -q | grep "^${PROJECT_NAME}" | while read -r network; do
+    docker network rm "$network"
+done
 
-echo "Removing dangling Docker images"
-docker image prune -f
+echo "Removing project images..."
+docker images --format "{{.Repository}} {{.ID}}" | grep "^${PROJECT_NAME}" | while read -r image_name image_id; do
+    docker rmi "$image_id"
+done
 
-echo "Removing all Docker containers"
-docker container prune -f
-
-echo "Removing all Docker images"
-docker image prune -a -f
-
-echo "Cleanup complete. All Docker data related to the project has been wiped."
+echo "Project-specific cleanup complete for: $PROJECT_NAME"

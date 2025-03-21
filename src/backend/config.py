@@ -28,3 +28,4 @@ class Settings(BaseSettings):
         print("Current working directory:", os.getcwd())  # Debug line
         print("Environment variables:", dict(os.environ))  # Debug line
         super().__init__(**kwargs)
+        print(f"Database URL: {self.DATABASE_URL}")  # Debug line
