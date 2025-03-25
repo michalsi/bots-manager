@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BotBase(BaseModel):
     """Base Pydantic model for bot data validation."""
-    grid_id: str
-    bot_type: str
+    grid_id: Annotated[str, Field(min_length=1, max_length=100)]
+    bot_type: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]+$")]
     symbol: str
     status: str
     grid_mode: str
@@ -15,10 +15,10 @@ class BotBase(BaseModel):
     grid_type: str
 
     mark_price: float
-    total_investment: float
+    total_investment: Annotated[float, Field(gt=0)]
     pnl: float
     pnl_percentage: float
-    leverage: int
+    leverage: Annotated[int, Field(gt=0, le=100)]
     min_price: float
     max_price: float
     cell_num: int

@@ -54,39 +54,33 @@ async def update_trading_bots(
 ) -> Dict:
     """
     Update trading bots by fetching data from Bybit and syncing with database.
-    Args:
-        db: Database session
-        settings: Application settings
-        page: Page number for pagination
-        limit: Number of items per page
-        status: Bot status filter
-    Returns:
-        Dict containing the API response and sync status
     """
-    client = BybitClient(
-        BybitClientConfig(
-            secure_token=settings.BYBIT_SECURE_TOKEN,
-            device_id=settings.BYBIT_DEVICE_ID
-        )
-    )
     try:
-        bots_data = await client.get_trading_bots(page=page, limit=limit, status=status)
-        logger.info(f"Successfully fetched {len(bots_data.get('data', []))} bots from Bybit")
+        client = BybitClient(
+            BybitClientConfig(
+                secure_token=settings.BYBIT_SECURE_TOKEN,
+                device_id=settings.BYBIT_DEVICE_ID
+            )
+        )
 
-        synced_bots = await sync_bots_with_db(db, bots_data)
-        logger.info(f"Successfully synced {len(synced_bots) if synced_bots else 0} bots")
-        return {
-            "api_response": bots_data,
-            "sync_status": "success",
-            "synced_bots_count": len(synced_bots) if synced_bots else 0
-        }
+        try:
+            bots_data = await client.get_trading_bots(page=page, limit=limit, status=status)
+        except BybitClientError as e:
+            logger.error(f"Bybit API error: {e.message}")
+            raise HTTPException(
+                status_code=e.code or 502,
+                detail=e.message
+            )
 
-    except BybitClientError as e:
-        logger.error(f"Bybit API request failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch trading bots")
+        logger.info("Successfully fetched data from Bybit API")
+        # Continue with sync only if we have valid data
+        return await sync_bots_with_db(db, bots_data)
+
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         logger.error(f"Database error while syncing bots: {e}")
         raise HTTPException(status_code=500, detail="Database error occurred")
     except Exception as e:
-        logger.error(f"Failed to update trading bots: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update trading bots")
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
