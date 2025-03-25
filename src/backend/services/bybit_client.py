@@ -3,6 +3,8 @@ from typing import Dict
 
 import httpx
 
+from src.backend.logger import logger
+
 
 @dataclass
 class BybitClientConfig:
@@ -13,8 +15,10 @@ class BybitClientConfig:
 
 
 class BybitClientError(Exception):
-    """Base exception for Bybit client errors"""
-    pass
+    def __init__(self, message: str, code: int = None):
+        self.message = message
+        self.code = code
+        super().__init__(message)
 
 
 class BybitClient:
@@ -72,3 +76,23 @@ class BybitClient:
                 raise BybitClientError(f"API request failed: {e.response.text}")
             except httpx.RequestError as e:
                 raise BybitClientError(f"Request failed: {str(e)}")
+
+    async def check_api_status(self) -> Dict:
+        async with httpx.AsyncClient() as session:
+            try:
+                response = await session.get(
+                    f"{self.config.base_url}/v5/user/query-api",
+                    headers=self._headers
+                )
+                response.raise_for_status()
+                data = response.json()
+                logger.debug(f"API status response: {data}")
+                return data
+            except httpx.TimeoutException as e:
+                raise BybitClientError(f"Request timed out: {str(e)}", code=504)
+            except httpx.HTTPStatusError as e:
+                raise BybitClientError(f"HTTP {e.response.status_code}: {e.response.text}", code=e.response.status_code)
+            except httpx.RequestError as e:
+                raise BybitClientError(f"Request failed: {str(e)}", code=502)
+            except Exception as e:
+                raise BybitClientError(f"Unexpected error: {str(e)}", code=500)
