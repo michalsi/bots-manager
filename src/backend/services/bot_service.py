@@ -18,33 +18,11 @@ def extract_bot_data(raw_response: dict) -> list[Bot]:
     Returns:
         List[Bot]: List of transformed bot models
     Raises:
-        ValueError: If authentication failed or data transformation fails
         KeyError: If required fields are missing from the response
+        ValueError: If data transformation fails
     """
-    logger.debug(f"Raw API response: {raw_response}")
-
-    # Check for authentication failure
-    if raw_response.get("ret_code") == 10007:
-        logger.error("Authentication failed with Bybit API")
-        raise ValueError("Authentication failed with Bybit API")
-
-    # Check for any other error codes
-    if raw_response.get("ret_code") != 0:
-        logger.error(f"API error: {raw_response.get('ret_msg')}")
-        raise ValueError(f"API error: {raw_response.get('ret_msg')}")
-
     try:
-        if "result" not in raw_response or not raw_response["result"]:
-            raise ValueError("Empty or invalid result in API response")
-
-        if "bots" in raw_response["result"]:
-            bots_data = raw_response["result"]["bots"]
-        else:
-            bots_data = raw_response["result"]
-
-        if not isinstance(bots_data, list):
-            raise ValueError("Bot data must be a list")
-
+        bots_data = raw_response["result"]["bots"]
         transformed_bots = []
         for bot_data in bots_data:
             try:
@@ -62,134 +40,105 @@ def extract_bot_data(raw_response: dict) -> list[Bot]:
 def transform_bot_data(raw_bot_data: dict) -> Bot:
     """
     Transform raw bot data from API response into Bot model instance.
+    Args:
+        raw_bot_data (dict): Single bot data from API response
+    Returns:
+        Bot: SQLAlchemy Bot model instance
     """
-    logger.debug(f"Transforming bot data: {raw_bot_data}")  # Debug log
 
-    # Extract grid data
-    grid_data = raw_bot_data.get("grid", {})  # Check if it's under 'grid' key
-    if not grid_data:
-        grid_data = raw_bot_data  # Use root object if no 'grid' key
+    # Extract grid data based on bot type
+    bot_type = raw_bot_data["type"]
+    grid_data = raw_bot_data["future_grid"]
 
+    return Bot(
+        grid_id=grid_data["grid_id"],
+        bot_type=bot_type,
+        symbol=grid_data["symbol"],
+        status=grid_data["status"],
+        grid_mode=grid_data["grid_mode"],
+        price_token=grid_data["price_token"],
+        grid_type=grid_data["grid_type"],
+
+        mark_price=float(grid_data["mark_price"]),
+        total_investment=float(grid_data["total_investment"]),
+        pnl=float(grid_data["pnl"]),
+        pnl_percentage=float(grid_data["pnl_per"]),  # Note: field name is "pnl_per" in API
+        leverage=int(grid_data["leverage"]),
+        min_price=float(grid_data["min_price"]),
+        max_price=float(grid_data["max_price"]),
+        cell_num=int(grid_data["cell_num"]),
+        liq_price=float(grid_data["liq_price"]),
+        arbitrage_num=int(grid_data["arbitrage_num"]),
+        total_apr=float(grid_data["total_apr"]),
+        entry_price=float(grid_data["entry_price"] or 0),  # Handle potential empty string
+        current_price=float(grid_data["current_price"]),
+
+        running_duration=int(grid_data["running_duration"]),
+        last_synced_at=datetime.now(timezone.utc),  # Current time in UTC
+
+        # Nullable fields
+        close_detail=grid_data["close_detail"],  # Already None if null
+
+        # Store complete original data
+        raw_data=raw_bot_data  # Store the complete bot data, not just grid_data
+    )
+
+
+async def sync_bots_with_db(db: Session, api_response: dict) -> List[Bot]:
+    """
+    Sync bots from API response with database.
+    Args:
+        db: SQLAlchemy database session
+        api_response: Raw API response containing bot data
+    Returns:
+        List[Bot]: List of updated/created bot instances
+    """
     try:
-        return Bot(
-            grid_id=str(grid_data.get("gridId") or grid_data.get("grid_id")),
-            bot_type=raw_bot_data.get("type", "unknown"),
-            symbol=grid_data.get("symbol"),
-            status=grid_data.get("status"),
-            grid_mode=grid_data.get("gridMode") or grid_data.get("grid_mode"),
-            price_token=grid_data.get("priceToken") or grid_data.get("price_token"),
-            grid_type=grid_data.get("gridType") or grid_data.get("grid_type"),
+        logger.info("Starting bot sync process")
+        new_bots = extract_bot_data(api_response)
+        logger.info(f"Transformed {len(new_bots)} bots from API response")
+        if not new_bots:
+            logger.warning("No bots to sync")
+            return None
+        new_grid_ids = [bot.grid_id for bot in new_bots]
+        try:
+            existing_bots = db.query(Bot).filter(Bot.grid_id.in_(new_grid_ids)).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Database query failed: {str(e)}")
+            raise
 
-            # Convert numeric values safely
-            mark_price=float(grid_data.get("markPrice", 0) or 0),
-            total_investment=float(grid_data.get("totalInvestment", 0) or 0),
-            pnl=float(grid_data.get("pnl", 0) or 0),
-            pnl_percentage=float(grid_data.get("pnlPer", 0) or 0),
-            leverage=int(grid_data.get("leverage", 1) or 1),
-            min_price=float(grid_data.get("minPrice", 0) or 0),
-            max_price=float(grid_data.get("maxPrice", 0) or 0),
-            cell_num=int(grid_data.get("cellNum", 0) or 0),
-            liq_price=float(grid_data.get("liqPrice", 0) or 0),
-            arbitrage_num=int(grid_data.get("arbitrageNum", 0) or 0),
-            total_apr=float(grid_data.get("totalApr", 0) or 0),
-            entry_price=float(grid_data.get("entryPrice", 0) or 0),
-            current_price=float(grid_data.get("currentPrice", 0) or 0),
+        existing_bots_dict: Dict[str, Bot] = dict()
+        for bot in existing_bots:
+            existing_bots_dict[str(bot.grid_id)] = bot
 
-            running_duration=int(grid_data.get("runningDuration", 0) or 0),
-            last_synced_at=datetime.now(timezone.utc),
-            close_detail=grid_data.get("closeDetail"),
-            raw_data=raw_bot_data
-        )
-    except Exception as e:
-        logger.error(f"Error transforming bot data: {e}", exc_info=True)
-        raise ValueError(f"Failed to transform bot data: {e}")
+        updates = 0
+        new_additions = 0
 
-
-async def sync_bots_with_db(db: Session, bots_data: Dict) -> Dict:
-    """
-    Sync bots data with database with improved data extraction
-    """
-    logger.info("Starting bot sync process")
-    logger.debug(f"Received bots_data: {bots_data}")  # Debug log
-
-    if not isinstance(bots_data, dict):
-        return {
-            "status": "error",
-            "code": "API_ERROR",
-            "message": "Invalid response structure from Bybit API"
-        }
-
-    try:
-        # Check for Bybit API response structure
-        ret_code = bots_data.get('retCode')
-        if ret_code != 0:  # Bybit uses 0 for success
-            return {
-                "status": "error",
-                "code": "API_ERROR",
-                "message": f"Bybit API error: {bots_data.get('retMsg', 'Unknown error')}"
-            }
-
-        # Extract bots from the response
-        result = bots_data.get('result', {})
-        bots_list = result.get('list', [])  # Bybit usually uses 'list' for array data
-
-        if not bots_list:
-            logger.warning("No bots found in the API response")
-            return {
-                "status": "success",
-                "message": "No bots to sync",
-                "data": []
-            }
-
-        logger.debug(f"Found {len(bots_list)} bots to process")
-
-        # Process each bot
-        synced_bots = []
-        for bot_data in bots_list:
+        for bot in new_bots:
             try:
-                # Transform raw bot data into Bot model
-                transformed_bot = extract_bot_data(bot_data)
-
-                # Check for existing bot
-                existing_bot = db.query(Bot).filter(
-                    Bot.grid_id == transformed_bot.grid_id
-                ).first()
-
-                if existing_bot:
-                    # Update existing bot
-                    for key, value in transformed_bot.__dict__.items():
-                        if key != '_sa_instance_state':
+                grid_id_str = str(bot.grid_id)
+                if grid_id_str in existing_bots_dict:
+                    existing_bot = existing_bots_dict[grid_id_str]
+                    for key, value in bot.__dict__.items():
+                        if key != 'id' and not key.startswith('_'):
                             setattr(existing_bot, key, value)
+                    updates += 1
                 else:
-                    # Add new bot
-                    db.add(transformed_bot)
-
-                synced_bots.append(transformed_bot)
-
+                    db.add(bot)
+                    new_additions += 1
             except Exception as e:
-                logger.error(f"Error processing bot: {e}", exc_info=True)
+                logger.error(f"Failed to process bot: {str(e)}",
+                             extra={"bot": bot})
                 continue
-
-        db.commit()
-
-        return {
-            "status": "success",
-            "message": f"Successfully synced {len(synced_bots)} bots",
-            "data": synced_bots
-        }
-
-    except SQLAlchemyError as e:
-        db.rollback()
-        logger.error(f"Database error: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "code": "DB_ERROR",
-            "message": str(e)
-        }
+        try:
+            db.commit()
+            logger.info(f"Synced {updates} updated and {new_additions} new bots with database")
+        except SQLAlchemyError as e:
+            logger.error(f"Database commit failed: {str(e)}")
+            db.rollback()
+            raise
+        return new_bots
     except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "code": "SYNC_ERROR",
-            "message": str(e)
-        }
+        logger.error(f"Bot sync process failed: {str(e)}")
+        db.rollback()
+        raise
