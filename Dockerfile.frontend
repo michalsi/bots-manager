@@ -1,13 +1,25 @@
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
+# Install poetry
 RUN pip install poetry
 
+# Copy poetry files
 COPY pyproject.toml poetry.lock ./
+
+# Install dependencies
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
+    && poetry install --only main --no-interaction --no-ansi
 
-COPY src/ /app/src/
+# Copy application code
+COPY src/ ./src/
 
-CMD poetry run streamlit run src/frontend/main.py
+# Add Streamlit dependencies to requirements
+RUN poetry add streamlit pandas httpx
+
+# Expose port
+EXPOSE 8501
+
+# Run the application
+CMD ["streamlit", "run", "src/frontend/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
