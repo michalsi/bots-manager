@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import time
 from datetime import datetime
 
@@ -5,9 +7,16 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-# Constants
-API_BASE_URL = "http://backend:8000"  # Using docker service name
+API_BASE_URL = "http://backend:8000"
 REFRESH_INTERVAL = 60  # seconds
+
+
+def shorten_grid_id(grid_id: str, length: int = 6) -> str:
+    """Convert a long grid_id into a shorter human-readable string."""
+    hash_object = hashlib.sha256(str(grid_id).encode())
+    b64_hash = base64.b64encode(hash_object.digest()).decode('utf-8')
+    short_id = ''.join(c for c in b64_hash if c.isalnum())[:length]
+    return short_id
 
 
 def fetch_bots():
@@ -43,12 +52,20 @@ def create_bots_dataframe(bots_data):
     if not bots_data:
         return pd.DataFrame(), {}
 
-    # Store full bot data in a dictionary using a unique identifier
+    # Add short_id to each bot
+    for bot in bots_data:
+        bot['short_id'] = shorten_grid_id(bot['grid_id'])
+
+    # Store full bot data in a dictionary using grid_id as key
     bots_lookup = {bot['grid_id']: bot for bot in bots_data}
+
+    # Also create a lookup using short_id
+    short_id_lookup = {bot['short_id']: bot['grid_id'] for bot in bots_data}
 
     # Select and rename columns for display
     columns_mapping = {
-        'grid_id': 'Grid ID',
+        'short_id': 'Bot ID',
+        'grid_id': 'Original Grid ID',  # Keep for reference but will hide later
         'symbol': 'Symbol',
         'status': 'Status',
         'total_investment': 'Investment',
@@ -61,7 +78,10 @@ def create_bots_dataframe(bots_data):
         'last_synced_at': 'Last Update'
     }
     df = pd.DataFrame(bots_data)
-    df = df[columns_mapping.keys()].rename(columns=columns_mapping)
+    df = df[
+        ['short_id', 'grid_id'] + [col for col in columns_mapping.keys() if col not in ['short_id', 'grid_id']]].rename(
+        columns=columns_mapping)
+    
     # Format numeric columns
     df['Investment'] = df['Investment'].round(2)
     df['PnL'] = df['PnL'].round(2)
@@ -71,7 +91,7 @@ def create_bots_dataframe(bots_data):
     df['APR %'] = df['APR %'].round(2)
     df['Duration (h)'] = df['Duration (h)'].round(1)
     df['Last Update'] = df['Last Update'].apply(format_datetime)
-    return df, bots_lookup
+    return df, bots_lookup, short_id_lookup
 
 
 def display_bot_details(bot_data):
@@ -108,10 +128,10 @@ def main():
                 success = update_bots()
                 if success:
                     st.rerun()
-    # Fetch and display bots data
+
     with st.spinner("Loading bots data..."):
         bots_data = fetch_bots()
-        df, bots_lookup = create_bots_dataframe(bots_data)
+        df, bots_lookup, short_id_lookup = create_bots_dataframe(bots_data)
 
     if df.empty:
         st.warning("No bots data available")
@@ -129,9 +149,17 @@ def main():
         col4.metric("Active Bots", active_bots)
 
         df['Details'] = False  # Add a column for toggles
-        display_columns = [col for col in df.columns if col != 'Grid ID']  # Exclude Grid ID from display
+
+        # Instead of using excluded_columns, drop the column before display
+        display_df = df.copy()
+        display_df = display_df.drop(columns=["Original Grid ID"])
 
         column_config = {
+            "Bot ID": st.column_config.TextColumn(
+                "Bot ID",
+                help="Shortened bot identifier",
+                disabled=True
+            ),
             "PnL": st.column_config.NumberColumn(format="$%.2f"),
             "PnL %": st.column_config.NumberColumn(format="%.2f%%"),
             "APR %": st.column_config.NumberColumn(format="%.2f%%"),
@@ -141,25 +169,21 @@ def main():
             )
         }
 
-        df['temp_index'] = range(len(df))
-        display_df = df[display_columns].copy()
-        display_df['temp_index'] = df['temp_index']
-
         edited_df = st.data_editor(
             display_df,
             use_container_width=True,
             hide_index=True,
             column_config=column_config
         )
-        complete_df = edited_df.merge(
-            df[['temp_index', 'Grid ID']],
-            on='temp_index',
-            how='left'
-        )
-        for index, row in complete_df.iterrows():
+
+        # Display detailed information for selected bots
+        for index, row in edited_df.iterrows():
             if row['Details']:
-                with st.expander(f"Details for {row['Symbol']}", expanded=True):
-                    bot_data = bots_lookup.get(row['Grid ID'])
+                # Get the original grid_id using the short_id
+                original_grid_id = df.at[index, 'Original Grid ID']
+
+                with st.expander(f"Details for {row['Symbol']} (Bot ID: {row['Bot ID']})", expanded=True):
+                    bot_data = bots_lookup.get(original_grid_id)
                     if bot_data:
                         display_bot_details(bot_data)
 

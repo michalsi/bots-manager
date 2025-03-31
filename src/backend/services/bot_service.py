@@ -62,7 +62,7 @@ def transform_bot_data(raw_bot_data: dict) -> Bot:
         mark_price=float(grid_data["mark_price"]),
         total_investment=float(grid_data["total_investment"]),
         pnl=float(grid_data["pnl"]),
-        pnl_percentage=float(grid_data["pnl_per"]),  # Note: field name is "pnl_per" in API
+        pnl_percentage=float(grid_data["pnl_per"]) * 100,
         leverage=int(grid_data["leverage"]),
         min_price=float(grid_data["min_price"]),
         max_price=float(grid_data["max_price"]),
