@@ -35,6 +35,80 @@ def format_datetime(dt_str):
     return ''
 
 
+def format_duration(seconds: str) -> str:
+    """Convert duration from seconds to 'XD Yh Zm' format"""
+    try:
+        seconds = int(float(seconds))
+        days = seconds // (24 * 3600)
+        seconds %= (24 * 3600)
+        hours = seconds // 3600
+        seconds %= 3600
+        minutes = seconds // 60
+
+        if days > 0:
+            return f"{days}D {hours}h {minutes}m"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+    except (ValueError, TypeError):
+        return "0m"
+
+
+def get_compact_column_config():
+    """Define compact column configuration with custom widths and multi-line headers"""
+    return {
+        "Bot ID": st.column_config.TextColumn(
+            "Bot\nID",
+            help="Shortened bot identifier",
+            disabled=True,
+            width="small"
+        ),
+        "Symbol": st.column_config.TextColumn(
+            "Symbol",
+            width="small"
+        ),
+        "Leverage": st.column_config.NumberColumn(
+            "Lev",  # Shortened name
+            help="Leverage",
+            width="xs"
+        ),
+        "Investment": st.column_config.NumberColumn(
+            "Invest\n($)",
+            format="%.2f",
+            width="small"
+        ),
+        "PnL": st.column_config.NumberColumn(
+            "PnL\n($)",
+            format="%.2f",
+            width="xs"
+        ),
+        "PnL %": st.column_config.NumberColumn(
+            "PnL\n%",
+            format="%.2f%%",
+            width="xs"
+        ),
+        "Current Price": st.column_config.NumberColumn(
+            "Price\n($)",
+            format="%.4f",
+            width="small"
+        ),
+        "Duration (h)": st.column_config.TextColumn(
+            "Run\nTime",
+            help="Running duration in days, hours, and minutes",
+            width="small"
+        ),
+        "Arbitrage Count": st.column_config.NumberColumn(
+            "Arb\nCount",
+            width="xs"
+        ),
+        "Details": st.column_config.CheckboxColumn(
+            "Show\nDetails",
+            help="Click to show detailed information",
+            width="xs"
+        )
+    }
+
 def update_bots():
     """Trigger bot data update from Bybit"""
     try:
@@ -50,7 +124,7 @@ def update_bots():
 def create_bots_dataframe(bots_data):
     """Create a pandas DataFrame from bots data with selected columns"""
     if not bots_data:
-        return pd.DataFrame(), {}
+        return pd.DataFrame(), {}, {}
 
     # Add short_id to each bot
     for bot in bots_data:
@@ -68,14 +142,13 @@ def create_bots_dataframe(bots_data):
         'grid_id': 'Original Grid ID',  # Keep for reference but will hide later
         'symbol': 'Symbol',
         'status': 'Status',
+        'leverage': 'Leverage',
         'total_investment': 'Investment',
         'pnl': 'PnL',
         'pnl_percentage': 'PnL %',
         'current_price': 'Current Price',
-        'mark_price': 'Mark Price',
-        'total_apr': 'APR %',
         'running_duration': 'Duration (h)',
-        'last_synced_at': 'Last Update'
+        'arbitrage_num': 'Arbitrage Count',
     }
     df = pd.DataFrame(bots_data)
     df = df[
@@ -84,13 +157,12 @@ def create_bots_dataframe(bots_data):
     
     # Format numeric columns
     df['Investment'] = df['Investment'].round(2)
+    df['Leverage'] = df['Leverage'].astype(int)
     df['PnL'] = df['PnL'].round(2)
     df['PnL %'] = df['PnL %'].round(2)
     df['Current Price'] = df['Current Price'].round(4)
-    df['Mark Price'] = df['Mark Price'].round(4)
-    df['APR %'] = df['APR %'].round(2)
-    df['Duration (h)'] = df['Duration (h)'].round(1)
-    df['Last Update'] = df['Last Update'].apply(format_datetime)
+    df['Duration (h)'] = df['Duration (h)'].apply(format_duration)
+    df['Arbitrage Count'] = df['Arbitrage Count'].astype(int)
     return df, bots_lookup, short_id_lookup
 
 
@@ -153,6 +225,7 @@ def main():
         # Instead of using excluded_columns, drop the column before display
         display_df = df.copy()
         display_df = display_df.drop(columns=["Original Grid ID"])
+        display_df = display_df.drop(columns=["Status"])
 
         column_config = {
             "Bot ID": st.column_config.TextColumn(
@@ -162,12 +235,16 @@ def main():
             ),
             "PnL": st.column_config.NumberColumn(format="$%.2f"),
             "PnL %": st.column_config.NumberColumn(format="%.2f%%"),
-            "APR %": st.column_config.NumberColumn(format="%.2f%%"),
+            "Duration (h)": st.column_config.TextColumn(
+                "Duration",
+                help="Running duration in days, hours, and minutes"
+            ),
             "Details": st.column_config.CheckboxColumn(
                 "Show Details",
                 help="Click to show detailed information"
             )
         }
+        column_config = get_compact_column_config()
 
         edited_df = st.data_editor(
             display_df,
