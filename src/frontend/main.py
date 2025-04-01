@@ -54,7 +54,6 @@ def format_duration(seconds: str) -> str:
     except (ValueError, TypeError):
         return "0m"
 
-
 def get_compact_column_config():
     """Define compact column configuration with custom widths and multi-line headers"""
     return {
@@ -78,14 +77,12 @@ def get_compact_column_config():
             format="%.2f",
             width="small"
         ),
-        "PnL": st.column_config.NumberColumn(
+        "PnL": st.column_config.TextColumn(
             "PnL\n($)",
-            format="%.2f",
             width="xs"
         ),
-        "PnL %": st.column_config.NumberColumn(
+        "PnL %": st.column_config.TextColumn(
             "PnL\n%",
-            format="%.2f%%",
             width="xs"
         ),
         "Current Price": st.column_config.NumberColumn(
@@ -154,12 +151,19 @@ def create_bots_dataframe(bots_data):
     df = df[
         ['short_id', 'grid_id'] + [col for col in columns_mapping.keys() if col not in ['short_id', 'grid_id']]].rename(
         columns=columns_mapping)
-    
+
     # Format numeric columns
     df['Investment'] = df['Investment'].round(2)
     df['Leverage'] = df['Leverage'].astype(int)
-    df['PnL'] = df['PnL'].round(2)
-    df['PnL %'] = df['PnL %'].round(2)
+
+    # Store numeric PnL values before formatting
+    df['PnL_numeric'] = df['PnL'].round(2)
+    df['PnL %_numeric'] = df['PnL %'].round(2)
+
+    # Format PnL values for display
+    df['PnL'] = df['PnL_numeric'].apply(lambda x: f"{'🔴' if x < 0 else '🟢'} {x:.2f}")
+    df['PnL %'] = df['PnL %_numeric'].apply(lambda x: f"{'🔴' if x < 0 else '🟢'} {x:.2f}%")
+
     df['Current Price'] = df['Current Price'].round(4)
     df['Duration (h)'] = df['Duration (h)'].apply(format_duration)
     df['Arbitrage Count'] = df['Arbitrage Count'].astype(int)
@@ -210,9 +214,11 @@ def main():
     else:
         # Calculate summary metrics
         total_investment = df['Investment'].sum()
-        total_pnl = df['PnL'].sum()
-        total_pnl_percentage = (total_pnl / total_investment * 100) if total_investment else 0
+        # Use numeric PnL value for calculations
+        total_pnl = df['PnL_numeric'].sum()
+        total_pnl_percentage = (total_pnl / total_investment * 100) if total_investment > 0 else 0
         active_bots = len(df[df['Status'] == 'RUNNING'])
+
         # Display metrics
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Investment", f"${total_investment:,.2f}")
@@ -226,6 +232,8 @@ def main():
         display_df = df.copy()
         display_df = display_df.drop(columns=["Original Grid ID"])
         display_df = display_df.drop(columns=["Status"])
+        # Drop the numeric columns used for calculations
+        display_df = display_df.drop(columns=["PnL_numeric", "PnL %_numeric"])
 
         column_config = {
             "Bot ID": st.column_config.TextColumn(
@@ -233,8 +241,8 @@ def main():
                 help="Shortened bot identifier",
                 disabled=True
             ),
-            "PnL": st.column_config.NumberColumn(format="$%.2f"),
-            "PnL %": st.column_config.NumberColumn(format="%.2f%%"),
+            "PnL": st.column_config.TextColumn("PnL"),  # Changed from NumberColumn to TextColumn
+            "PnL %": st.column_config.TextColumn("PnL %"),  # Changed from NumberColumn to TextColumn
             "Duration (h)": st.column_config.TextColumn(
                 "Duration",
                 help="Running duration in days, hours, and minutes"
